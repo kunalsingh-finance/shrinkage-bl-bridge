@@ -1,0 +1,20 @@
+{
+  "T": 160,
+  "N": 8,
+  "w_mu": 0.7291774672614857,
+  "w_cov": 1.0,
+  "rho_bar": 0.007683028862052834,
+  "mu_g": -0.00021006783767718194,
+  "norm_sample_minus_shrunk": 6.6634346637493e-05,
+  "norm_sample_minus_target_cc": 6.6634346637493e-05,
+  "asset_names": [
+    "AAPL",
+    "MSFT",
+    "GOOG",
+    "AMZN",
+    "NVDA",
+    "META",
+    "JPM",
+    "XOM"
+  ]
+}
