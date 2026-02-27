@@ -33,6 +33,7 @@ def main() -> int:
     if not in_path.exists():
         raise SystemExit(f"Input CSV does not exist: {in_path}")
 
+    # Keep CSV loading here so non-numeric columns can be filtered inside shrink_inputs.
     df = pd.read_csv(in_path)
     out = shrink_inputs(df)
 
@@ -51,6 +52,7 @@ def main() -> int:
     for i, name in enumerate(out["asset_names"][:5]):
         print(f"  {name}: {mu_sample[i]:.6e} -> {mu_shrunk[i]:.6e}")
 
+    # Diagnostic norms: how far sample covariance sits from shrunk and target matrices.
     norm_sample_shrunk = float(np.linalg.norm(Sigma_sample - Sigma_shrunk, ord="fro"))
     norm_sample_target = float(np.linalg.norm(Sigma_sample - Sigma_target, ord="fro"))
     print(f"||Sigma_sample - Sigma_shrunk||_F = {norm_sample_shrunk:.6e}")
@@ -59,6 +61,7 @@ def main() -> int:
     out_npz.parent.mkdir(parents=True, exist_ok=True)
     np.savez(out_npz, mu_shrunk=mu_shrunk, Sigma_shrunk=Sigma_shrunk)
 
+    # JSON summary is intentionally lightweight for reporting / handoff.
     summary = {
         "T": int(out["T"]),
         "N": int(out["N"]),
@@ -78,4 +81,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

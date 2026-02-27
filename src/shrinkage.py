@@ -115,12 +115,14 @@ def constant_corr_target(S: np.ndarray) -> tuple[np.ndarray, float]:
     var = np.clip(np.diag(S), 0.0, None)
     vol = np.sqrt(var)
 
+    # Build a robust sample correlation matrix from S.
     C = np.zeros((N, N), dtype=float)
     np.fill_diagonal(C, 1.0)
 
     for i in range(N):
         for j in range(i + 1, N):
             denom = vol[i] * vol[j]
+            # If either asset has (near) zero volatility, define correlation as 0.
             if denom > EPS:
                 cij = float(np.clip(S[i, j] / denom, -1.0, 1.0))
             else:
@@ -134,6 +136,8 @@ def constant_corr_target(S: np.ndarray) -> tuple[np.ndarray, float]:
         iu = np.triu_indices(N, k=1)
         rho_bar = float(np.mean(C[iu])) if iu[0].size else 0.0
 
+    # Constant-correlation target: keep each variance, replace all pairwise
+    # correlations by the global average off-diagonal correlation.
     C_cc = np.full((N, N), rho_bar, dtype=float)
     np.fill_diagonal(C_cc, 1.0)
     Sigma_cc = np.outer(vol, vol) * C_cc
@@ -162,15 +166,18 @@ def lw_shrink_to_target(X: np.ndarray, F: np.ndarray) -> tuple[np.ndarray, float
     S = (X.T @ X) / (T - 1)
     S = _symmetrize(S)
 
+    # Estimate phi = average squared noise around S.
     phi_acc = 0.0
     for t in range(T):
         d = np.outer(X[t], X[t]) - S
         phi_acc += float(np.sum(d * d))
     phi = phi_acc / T
 
+    # gamma is the squared distance between sample covariance and target.
     gamma = float(np.sum((S - F) ** 2))
     w_cov = 1.0 if gamma <= EPS else float(np.clip(phi / gamma, 0.0, 1.0))
 
+    # Convex combination between sample covariance and target covariance.
     Sigma_shr = (1.0 - w_cov) * S + w_cov * F
     zero_var_mask = np.diag(S) <= ZERO_VAR_TOL
     Sigma_shr = _enforce_psd(Sigma_shr, zero_var_mask=zero_var_mask)
@@ -195,12 +202,14 @@ def jorion_mean_shrink(
 
     den = float(one @ Sigma_inv @ one)
     if abs(den) <= EPS:
+        # Fallback: if GLS denominator is unstable, use simple average mean.
         mu_g = float(np.mean(mu_hat))
     else:
         mu_g = float((one @ Sigma_inv @ mu_hat) / den)
 
     d = mu_hat - mu_g * one
     quad = max(float(d @ Sigma_inv @ d), 0.0)
+    # Larger cross-sectional dispersion (quad) -> less mean shrinkage.
     w_mu = float((N + 2) / (N + 2 + T * quad))
     w_mu = float(np.clip(w_mu, 0.0, 1.0))
     mu_shr = (1.0 - w_mu) * mu_hat + w_mu * (mu_g * one)
@@ -212,17 +221,21 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
     R_np, asset_names = clean_returns(R)
     T, N = R_np.shape
 
+    # 1) Estimate sample moments.
     mu_hat, S, X = sample_mean_cov(R_np)
     zero_var_mask = np.diag(S) <= ZERO_VAR_TOL
     S = _enforce_psd(S, zero_var_mask=zero_var_mask)
 
+    # 2) Build a structured covariance target (constant correlation).
     Sigma_cc, rho_bar = constant_corr_target(S)
     Sigma_cc = _enforce_psd(Sigma_cc, zero_var_mask=zero_var_mask)
 
+    # 3) Shrink covariance toward target with data-driven intensity.
     Sigma_shr, w_cov, S_from_lw = lw_shrink_to_target(X, Sigma_cc)
     S_from_lw = _enforce_psd(S_from_lw, zero_var_mask=zero_var_mask)
     Sigma_shr = _enforce_psd(Sigma_shr, zero_var_mask=zero_var_mask)
 
+    # 4) Shrink means toward the GLS grand mean.
     mu_shr, w_mu, mu_g = jorion_mean_shrink(mu_hat, Sigma_shr, T=T)
 
     return {
@@ -239,4 +252,3 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
         "w_mu": w_mu,
         "mu_shrunk": mu_shr,
     }
-
