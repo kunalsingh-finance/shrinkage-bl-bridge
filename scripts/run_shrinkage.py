@@ -29,6 +29,7 @@ def main() -> int:
     in_path = Path(args.input_csv)
     out_npz = Path(args.output_npz)
     out_json = out_npz.with_suffix(".json")
+    out_mu_csv = out_npz.with_name(f"{out_npz.stem}_mu_js.csv")
 
     if not in_path.exists():
         raise SystemExit(f"Input CSV does not exist: {in_path}")
@@ -39,6 +40,7 @@ def main() -> int:
 
     mu_sample = out["mu_sample"]
     mu_shrunk = out["mu_shrunk"]
+    mu_js_table = out["mu_js_table"]
     Sigma_sample = out["Sigma_sample"]
     Sigma_shrunk = out["Sigma_shrunk"]
     Sigma_target = out["Sigma_target_cc"]
@@ -59,7 +61,14 @@ def main() -> int:
     print(f"||Sigma_sample - Sigma_target_cc||_F = {norm_sample_target:.6e}")
 
     out_npz.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(out_npz, mu_shrunk=mu_shrunk, Sigma_shrunk=Sigma_shrunk)
+    np.savez(
+        out_npz,
+        mu_shrunk=mu_shrunk,
+        mu_js=mu_shrunk,
+        asset_names=np.array(out["asset_names"], dtype=object),
+        Sigma_shrunk=Sigma_shrunk,
+    )
+    mu_js_table.to_csv(out_mu_csv, index=False)
 
     # JSON summary is intentionally lightweight for reporting / handoff.
     summary = {
@@ -75,6 +84,7 @@ def main() -> int:
     }
     out_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"saved: {out_npz}")
+    print(f"saved: {out_mu_csv}")
     print(f"saved: {out_json}")
     return 0
 

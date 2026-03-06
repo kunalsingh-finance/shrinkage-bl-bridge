@@ -238,6 +238,8 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
     # 4) Shrink means toward the GLS grand mean.
     mu_shr, w_mu, mu_g = jorion_mean_shrink(mu_hat, Sigma_shr, T=T)
 
+    mu_js_table = pd.DataFrame({"ETF": asset_names, "mu_js": mu_shr})
+
     return {
         "T": T,
         "N": N,
@@ -250,5 +252,19 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
         "Sigma_shrunk": Sigma_shr,
         "mu_g": mu_g,
         "w_mu": w_mu,
+        "mu_js": mu_shr,
         "mu_shrunk": mu_shr,
+        "mu_js_table": mu_js_table,
     }
+
+
+def bl_shrinkage_inputs(R: Any) -> tuple[pd.DataFrame, np.ndarray]:
+    """
+    Return BL-ready shrinkage outputs as:
+    1) ETF + mu_js table with shape (N, 2)
+    2) Shrunk covariance matrix with shape (N, N)
+    """
+    out = shrink_inputs(R)
+    mu_js_table = out["mu_js_table"].copy()
+    Sigma_shrunk = np.asarray(out["Sigma_shrunk"], dtype=float)
+    return mu_js_table, Sigma_shrunk

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.shrinkage import shrink_inputs
+from src.shrinkage import bl_shrinkage_inputs, shrink_inputs
 
 
 def test_w_mu_and_w_cov_bounded() -> None:
@@ -59,3 +59,20 @@ def test_constant_asset_does_not_crash() -> None:
     assert np.allclose(Sigma[idx, :], 0.0, atol=1e-12)
     assert np.allclose(Sigma[:, idx], 0.0, atol=1e-12)
 
+
+def test_bl_shrinkage_outputs_have_expected_contract() -> None:
+    rng = np.random.default_rng(77)
+    df = pd.DataFrame(
+        rng.normal(0.0, 0.02, size=(50, 3)),
+        columns=["SPY", "QQQ", "IWM"],
+    )
+
+    mu_js_table, Sigma_shrunk = bl_shrinkage_inputs(df)
+
+    assert list(mu_js_table.columns) == ["ETF", "mu_js"]
+    assert mu_js_table.shape == (3, 2)
+    assert mu_js_table["ETF"].tolist() == ["SPY", "QQQ", "IWM"]
+    assert np.all(np.isfinite(mu_js_table["mu_js"].to_numpy(dtype=float)))
+
+    assert Sigma_shrunk.shape == (3, 3)
+    assert np.allclose(Sigma_shrunk, Sigma_shrunk.T, atol=1e-12)
