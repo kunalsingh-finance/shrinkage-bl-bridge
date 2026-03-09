@@ -14,13 +14,40 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.shrinkage import shrink_inputs
+from src.shrinkage import DEFAULT_MEAN_TARGET_MODE, shrink_inputs
 
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Shrink expected returns and covariance from CSV.")
     p.add_argument("--in", dest="input_csv", required=True, help="Returns CSV path.")
     p.add_argument("--out", dest="output_npz", required=True, help="Output .npz path.")
+    p.add_argument(
+        "--mean-target-mode",
+        dest="mean_target_mode",
+        choices=["jorion", "benchmark", "basic"],
+        default=DEFAULT_MEAN_TARGET_MODE,
+        help="Mean shrink target: 'jorion' (mu_0=mu_g) or 'benchmark'/'basic' (mu_0=user benchmark).",
+    )
+    p.add_argument(
+        "--benchmark-mu0",
+        dest="benchmark_mu0",
+        type=float,
+        default=None,
+        help=(
+            "Scalar benchmark target for benchmark/basic mode. "
+            "If omitted, uses trailing equal-weight market average."
+        ),
+    )
+    p.add_argument(
+        "--benchmark-lookback",
+        dest="benchmark_lookback",
+        type=int,
+        default=6,
+        help=(
+            "Trailing periods for inferred benchmark target when --benchmark-mu0 is not set "
+            "(benchmark/basic mode only)."
+        ),
+    )
     return p
 
 
@@ -36,7 +63,12 @@ def main() -> int:
 
     # Keep CSV loading here so non-numeric columns can be filtered inside shrink_inputs.
     df = pd.read_csv(in_path)
-    out = shrink_inputs(df)
+    out = shrink_inputs(
+        df,
+        mean_target_mode=args.mean_target_mode,
+        benchmark_mu0=args.benchmark_mu0,
+        benchmark_lookback=args.benchmark_lookback,
+    )
 
     mu_sample = out["mu_sample"]
     mu_shrunk = out["mu_shrunk"]
@@ -48,8 +80,11 @@ def main() -> int:
     print(f"T={out['T']}, N={out['N']}")
     print(
         f"w_mu={out['w_mu']:.6f}, w_cov={out['w_cov']:.6f}, "
-        f"rho_bar={out['rho_bar']:.6f}, mu_g={out['mu_g']:.6f}"
+        f"rho_bar={out['rho_bar']:.6f}, mu_g={out['mu_g']:.6f}, "
+        f"mode={out['mean_target_mode']}, mu_target={out['mu_target_scalar']:.6f}"
     )
+    if out["benchmark_lookback_used"] is not None:
+        print(f"benchmark lookback used={out['benchmark_lookback_used']}")
     print("first 5 mu_sample vs mu_shrunk")
     for i, name in enumerate(out["asset_names"][:5]):
         print(f"  {name}: {mu_sample[i]:.6e} -> {mu_shrunk[i]:.6e}")
@@ -78,6 +113,9 @@ def main() -> int:
         "w_cov": float(out["w_cov"]),
         "rho_bar": float(out["rho_bar"]),
         "mu_g": float(out["mu_g"]),
+        "mean_target_mode": out["mean_target_mode"],
+        "mu_target_scalar": float(out["mu_target_scalar"]),
+        "benchmark_lookback_used": out["benchmark_lookback_used"],
         "norm_sample_minus_shrunk": norm_sample_shrunk,
         "norm_sample_minus_target_cc": norm_sample_target,
         "asset_names": out["asset_names"],

@@ -76,3 +76,43 @@ def test_bl_shrinkage_outputs_have_expected_contract() -> None:
 
     assert Sigma_shrunk.shape == (3, 3)
     assert np.allclose(Sigma_shrunk, Sigma_shrunk.T, atol=1e-12)
+
+
+def test_benchmark_mode_uses_explicit_mu0_target() -> None:
+    rng = np.random.default_rng(1234)
+    R = rng.normal(0.001, 0.02, size=(90, 6))
+    mu0 = 0.0025
+    out = shrink_inputs(R, mean_target_mode="benchmark", benchmark_mu0=mu0)
+
+    assert out["mean_target_mode"] == "benchmark"
+    assert np.isclose(out["mu_target_scalar"], mu0, atol=1e-15)
+    assert out["benchmark_lookback_used"] is None
+
+    if out["w_mu"] > 0:
+        target = np.full(out["N"], mu0)
+        d_sample = float(np.linalg.norm(out["mu_sample"] - target))
+        d_shrunk = float(np.linalg.norm(out["mu_shrunk"] - target))
+        assert d_shrunk <= d_sample + 1e-12
+
+
+def test_benchmark_mode_infers_trailing_market_average_by_default() -> None:
+    # Last 6 row means are: 0.03, 0.04, 0.05, 0.06, 0.07, 0.08 -> average 0.055
+    R = np.array(
+        [
+            [0.0, 0.01, 0.02],
+            [0.01, 0.02, 0.03],
+            [0.02, 0.03, 0.04],
+            [0.01, 0.02, 0.03],
+            [0.02, 0.03, 0.04],
+            [0.03, 0.04, 0.05],
+            [0.04, 0.05, 0.06],
+            [0.05, 0.06, 0.07],
+            [0.06, 0.07, 0.08],
+            [0.07, 0.08, 0.09],
+        ],
+        dtype=float,
+    )
+    out = shrink_inputs(R, mean_target_mode="benchmark")
+    assert out["mean_target_mode"] == "benchmark"
+    assert out["benchmark_lookback_used"] == 6
+    assert np.isclose(out["mu_target_scalar"], 0.055, atol=1e-12)

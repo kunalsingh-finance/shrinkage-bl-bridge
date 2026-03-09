@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.shrinkage import bl_shrinkage_inputs
+from src.shrinkage import DEFAULT_MEAN_TARGET_MODE, bl_shrinkage_inputs
 
 EPS = 1e-12
 
@@ -54,10 +54,20 @@ def to_bl_inputs(mu_js_table: pd.DataFrame, Sigma_shrunk: np.ndarray) -> dict[st
     return {"tickers": tickers, "mu": mu, "Sigma": Sigma}
 
 
-def build_bl_inputs_from_returns(R: Any) -> dict[str, Any]:
+def build_bl_inputs_from_returns(
+    R: Any,
+    mean_target_mode: str = DEFAULT_MEAN_TARGET_MODE,
+    benchmark_mu0: float | None = None,
+    benchmark_lookback: int = 6,
+) -> dict[str, Any]:
     """
     End-to-end bridge:
       Quant returns data -> shrinkage -> BL-ready arrays.
     """
-    mu_js_table, Sigma_shrunk = bl_shrinkage_inputs(R)
+    mu_js_table, Sigma_shrunk = bl_shrinkage_inputs(
+        R,
+        mean_target_mode=mean_target_mode,
+        benchmark_mu0=benchmark_mu0,
+        benchmark_lookback=benchmark_lookback,
+    )
     return to_bl_inputs(mu_js_table, Sigma_shrunk)

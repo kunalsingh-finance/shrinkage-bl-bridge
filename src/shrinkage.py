@@ -10,6 +10,8 @@ import pandas as pd
 EPS = 1e-12
 ZERO_VAR_TOL = 1e-14
 PSD_TOL = -1e-10
+DEFAULT_MEAN_TARGET_MODE = "jorion"
+DEFAULT_BENCHMARK_LOOKBACK = 6
 
 
 def _as_2d_float_array(a: np.ndarray) -> np.ndarray:
@@ -184,39 +186,92 @@ def lw_shrink_to_target(X: np.ndarray, F: np.ndarray) -> tuple[np.ndarray, float
     return Sigma_shr, w_cov, S
 
 
-def jorion_mean_shrink(
-    mu_hat: np.ndarray, Sigma_shr: np.ndarray, T: int
-) -> tuple[np.ndarray, float, float]:
-    """Shrink sample means toward the GLS grand mean using Jorion's formula."""
+def _gls_grand_mean(mu_hat: np.ndarray, Sigma_shr: np.ndarray) -> float:
+    """Compute the GLS grand-mean target used by Jorion shrinkage."""
     mu_hat = np.asarray(mu_hat, dtype=float).reshape(-1)
+    Sigma_shr = _as_2d_float_array(Sigma_shr)
+    N = mu_hat.shape[0]
+    if Sigma_shr.shape != (N, N):
+        raise ValueError(f"Sigma_shr shape mismatch: expected {(N, N)}, got {Sigma_shr.shape}.")
+
+    Sigma_inv = np.linalg.pinv(_symmetrize(Sigma_shr))
+    one = np.ones(N, dtype=float)
+    den = float(one @ Sigma_inv @ one)
+    if abs(den) <= EPS:
+        # Fallback: if GLS denominator is unstable, use simple average mean.
+        return float(np.mean(mu_hat))
+    return float((one @ Sigma_inv @ mu_hat) / den)
+
+
+def _trailing_market_benchmark(R_np: np.ndarray, lookback: int) -> tuple[float, int]:
+    """
+    Estimate a scalar benchmark target from trailing equal-weight market returns.
+
+    The market proxy is row-wise cross-sectional average return.
+    """
+    R_np = _as_2d_float_array(R_np)
+    if lookback <= 0:
+        raise ValueError(f"benchmark_lookback must be positive, got {lookback}.")
+
+    used = min(int(lookback), int(R_np.shape[0]))
+    market_proxy = np.mean(R_np, axis=1)
+    mu0 = float(np.mean(market_proxy[-used:]))
+    return mu0, used
+
+
+def james_stein_mean_shrink(
+    mu_hat: np.ndarray, Sigma_shr: np.ndarray, T: int, mu_target: np.ndarray
+) -> tuple[np.ndarray, float]:
+    """James-Stein shrinkage of sample means toward a supplied target vector."""
+    mu_hat = np.asarray(mu_hat, dtype=float).reshape(-1)
+    mu_target = np.asarray(mu_target, dtype=float).reshape(-1)
     Sigma_shr = _as_2d_float_array(Sigma_shr)
 
     N = mu_hat.shape[0]
+    if mu_target.shape[0] != N:
+        raise ValueError(f"mu_target shape mismatch: expected {(N,)}, got {mu_target.shape}.")
     if Sigma_shr.shape != (N, N):
         raise ValueError(f"Sigma_shr shape mismatch: expected {(N, N)}, got {Sigma_shr.shape}.")
     if T <= 0:
         raise ValueError(f"T must be positive, got {T}.")
 
     Sigma_inv = np.linalg.pinv(_symmetrize(Sigma_shr))
-    one = np.ones(N, dtype=float)
-
-    den = float(one @ Sigma_inv @ one)
-    if abs(den) <= EPS:
-        # Fallback: if GLS denominator is unstable, use simple average mean.
-        mu_g = float(np.mean(mu_hat))
-    else:
-        mu_g = float((one @ Sigma_inv @ mu_hat) / den)
-
-    d = mu_hat - mu_g * one
+    d = mu_hat - mu_target
     quad = max(float(d @ Sigma_inv @ d), 0.0)
-    # Larger cross-sectional dispersion (quad) -> less mean shrinkage.
+    # Larger cross-sectional dispersion around target -> less mean shrinkage.
     w_mu = float((N + 2) / (N + 2 + T * quad))
     w_mu = float(np.clip(w_mu, 0.0, 1.0))
-    mu_shr = (1.0 - w_mu) * mu_hat + w_mu * (mu_g * one)
+    mu_shr = (1.0 - w_mu) * mu_hat + w_mu * mu_target
+    return mu_shr, w_mu
+
+
+def jorion_mean_shrink(
+    mu_hat: np.ndarray, Sigma_shr: np.ndarray, T: int
+) -> tuple[np.ndarray, float, float]:
+    """Shrink sample means to Jorion's GLS grand mean target via James-Stein."""
+    mu_hat = np.asarray(mu_hat, dtype=float).reshape(-1)
+    N = mu_hat.shape[0]
+    mu_g = _gls_grand_mean(mu_hat, Sigma_shr)
+    mu_target = np.full(N, mu_g, dtype=float)
+    mu_shr, w_mu = james_stein_mean_shrink(mu_hat, Sigma_shr, T=T, mu_target=mu_target)
     return mu_shr, w_mu, mu_g
 
 
-def shrink_inputs(R: Any) -> dict[str, Any]:
+def benchmark_mean_shrink(
+    mu_hat: np.ndarray, Sigma_shr: np.ndarray, T: int, benchmark_mu0: float
+) -> tuple[np.ndarray, float]:
+    """Shrink sample means toward a scalar benchmark target replicated across assets."""
+    mu_hat = np.asarray(mu_hat, dtype=float).reshape(-1)
+    mu_target = np.full(mu_hat.shape[0], float(benchmark_mu0), dtype=float)
+    return james_stein_mean_shrink(mu_hat, Sigma_shr, T=T, mu_target=mu_target)
+
+
+def shrink_inputs(
+    R: Any,
+    mean_target_mode: str = DEFAULT_MEAN_TARGET_MODE,
+    benchmark_mu0: float | None = None,
+    benchmark_lookback: int = DEFAULT_BENCHMARK_LOOKBACK,
+) -> dict[str, Any]:
     """Produce shrunk mean/covariance inputs and diagnostics for Markowitz."""
     R_np, asset_names = clean_returns(R)
     T, N = R_np.shape
@@ -235,8 +290,28 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
     S_from_lw = _enforce_psd(S_from_lw, zero_var_mask=zero_var_mask)
     Sigma_shr = _enforce_psd(Sigma_shr, zero_var_mask=zero_var_mask)
 
-    # 4) Shrink means toward the GLS grand mean.
-    mu_shr, w_mu, mu_g = jorion_mean_shrink(mu_hat, Sigma_shr, T=T)
+    # 4) Shrink means with selected target mode.
+    mode = str(mean_target_mode).strip().lower()
+    if mode == "basic":
+        mode = "benchmark"
+
+    mu_g = _gls_grand_mean(mu_hat, Sigma_shr)
+    used_lookback: int | None = None
+    if mode == "jorion":
+        mu_shr, w_mu, mu_target_scalar = jorion_mean_shrink(mu_hat, Sigma_shr, T=T)
+    elif mode == "benchmark":
+        if benchmark_mu0 is None:
+            mu_target_scalar, used_lookback = _trailing_market_benchmark(R_np, benchmark_lookback)
+        else:
+            mu_target_scalar = float(benchmark_mu0)
+        mu_shr, w_mu = benchmark_mean_shrink(mu_hat, Sigma_shr, T=T, benchmark_mu0=mu_target_scalar)
+    else:
+        raise ValueError(
+            "mean_target_mode must be one of {'jorion', 'benchmark', 'basic'}; "
+            f"got '{mean_target_mode}'."
+        )
+
+    mu_target = np.full(N, mu_target_scalar, dtype=float)
 
     mu_js_table = pd.DataFrame({"ETF": asset_names, "mu_js": mu_shr})
 
@@ -250,7 +325,11 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
         "Sigma_target_cc": Sigma_cc,
         "w_cov": w_cov,
         "Sigma_shrunk": Sigma_shr,
+        "mean_target_mode": mode,
         "mu_g": mu_g,
+        "mu_target": mu_target,
+        "mu_target_scalar": mu_target_scalar,
+        "benchmark_lookback_used": used_lookback,
         "w_mu": w_mu,
         "mu_js": mu_shr,
         "mu_shrunk": mu_shr,
@@ -258,13 +337,23 @@ def shrink_inputs(R: Any) -> dict[str, Any]:
     }
 
 
-def bl_shrinkage_inputs(R: Any) -> tuple[pd.DataFrame, np.ndarray]:
+def bl_shrinkage_inputs(
+    R: Any,
+    mean_target_mode: str = DEFAULT_MEAN_TARGET_MODE,
+    benchmark_mu0: float | None = None,
+    benchmark_lookback: int = DEFAULT_BENCHMARK_LOOKBACK,
+) -> tuple[pd.DataFrame, np.ndarray]:
     """
     Return BL-ready shrinkage outputs as:
     1) ETF + mu_js table with shape (N, 2)
     2) Shrunk covariance matrix with shape (N, N)
     """
-    out = shrink_inputs(R)
+    out = shrink_inputs(
+        R,
+        mean_target_mode=mean_target_mode,
+        benchmark_mu0=benchmark_mu0,
+        benchmark_lookback=benchmark_lookback,
+    )
     mu_js_table = out["mu_js_table"].copy()
     Sigma_shrunk = np.asarray(out["Sigma_shrunk"], dtype=float)
     return mu_js_table, Sigma_shrunk

@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.bl_integration import build_bl_inputs_from_returns
+from src.shrinkage import DEFAULT_MEAN_TARGET_MODE
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -22,6 +23,33 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--in", dest="input_csv", required=True, help="Returns CSV path.")
     p.add_argument("--out", dest="output_npz", required=True, help="Output .npz path.")
+    p.add_argument(
+        "--mean-target-mode",
+        dest="mean_target_mode",
+        choices=["jorion", "benchmark", "basic"],
+        default=DEFAULT_MEAN_TARGET_MODE,
+        help="Mean shrink target: 'jorion' (mu_0=mu_g) or 'benchmark'/'basic' (mu_0=user benchmark).",
+    )
+    p.add_argument(
+        "--benchmark-mu0",
+        dest="benchmark_mu0",
+        type=float,
+        default=None,
+        help=(
+            "Scalar benchmark target for benchmark/basic mode. "
+            "If omitted, uses trailing equal-weight market average."
+        ),
+    )
+    p.add_argument(
+        "--benchmark-lookback",
+        dest="benchmark_lookback",
+        type=int,
+        default=6,
+        help=(
+            "Trailing periods for inferred benchmark target when --benchmark-mu0 is not set "
+            "(benchmark/basic mode only)."
+        ),
+    )
     return p
 
 
@@ -37,7 +65,12 @@ def main() -> int:
     out_sigma_csv = out_npz.with_name(f"{out_npz.stem}_sigma.csv")
 
     df = pd.read_csv(in_path)
-    bl_inputs = build_bl_inputs_from_returns(df)
+    bl_inputs = build_bl_inputs_from_returns(
+        df,
+        mean_target_mode=args.mean_target_mode,
+        benchmark_mu0=args.benchmark_mu0,
+        benchmark_lookback=args.benchmark_lookback,
+    )
     tickers = bl_inputs["tickers"]
     mu = bl_inputs["mu"]
     sigma = bl_inputs["Sigma"]

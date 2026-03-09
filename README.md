@@ -11,6 +11,7 @@ It now also exposes `bl_shrinkage_inputs(...)` that returns exactly:
 ## What We Are Doing
 Quant forecasts can be noisy.  
 We shrink both expected returns and covariance before BL uses them.
+Project default policy is `jorion` mean-target mode (`mu_0 = mu_g * 1`), set in `src/shrinkage.py`.
 
 Data flow:
 `Quant returns -> Shrinkage -> BL inputs`
@@ -28,7 +29,9 @@ BL inputs from this repo are:
 3. Compute sample mean and sample covariance (`sample_mean_cov`).
 4. Build a constant-correlation covariance target (`constant_corr_target`).
 5. Compute covariance shrinkage intensity and combine sample/target covariances (`lw_shrink_to_target`).
-6. Compute Jorion mean shrinkage toward the GLS grand mean (`jorion_mean_shrink`).
+6. Compute James-Stein mean shrinkage with selectable target:
+   - `jorion` (default): shrink toward GLS grand mean `mu_g` (`mu_0 = mu_g * 1`)
+   - `benchmark`/`basic`: shrink toward user benchmark `mu_0 * 1` (or inferred trailing market average)
 7. Save outputs:
    - `.npz`: `mu_shrunk`/`mu_js`, `asset_names`, `Sigma_shrunk`
    - `_mu_js.csv`: `ETF,mu_js`
@@ -37,12 +40,14 @@ BL inputs from this repo are:
 ## Run and Verify
 - Run shrinkage:
   `python scripts/run_shrinkage.py --in returns.csv --out out_shrinkage.npz`
+- Run shrinkage with basic benchmark target:
+  `python scripts/run_shrinkage.py --in returns.csv --out out_shrinkage.npz --mean-target-mode benchmark --benchmark-mu0 0.001`
 - Run tests:
   `pytest -q`
 - Expected: test suite passes and CLI prints `T`, `N`, shrinkage weights, and covariance norm diagnostics.
 
 Run demo: `python scripts/run_shrinkage.py --in returns.csv --out out_shrinkage.npz`
-CLI prints `T`, `N`, `w_mu`, `w_cov`, `rho_bar`, `mu_g`, first 5 `mu_sample` vs `mu_shrunk`, and Frobenius norms.
+CLI prints `T`, `N`, `w_mu`, `w_cov`, `rho_bar`, `mu_g`, target mode/level, first 5 `mu_sample` vs `mu_shrunk`, and Frobenius norms.
 Outputs: `out_shrinkage.npz` with `mu_shrunk` and `Sigma_shrunk`, plus `out_shrinkage.json` with summary diagnostics.
 Run tests from project root: `pytest -q`
 BL bridge example:

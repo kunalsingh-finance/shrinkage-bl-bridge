@@ -36,3 +36,15 @@ def test_to_bl_inputs_rejects_duplicate_tickers() -> None:
     Sigma = np.eye(2)
     with pytest.raises(ValueError):
         to_bl_inputs(table, Sigma)
+
+
+def test_build_bl_inputs_supports_benchmark_mode() -> None:
+    rng = np.random.default_rng(11)
+    df = pd.DataFrame(
+        rng.normal(0.0, 0.015, size=(120, 4)),
+        columns=["SPY", "QQQ", "IWM", "EFA"],
+    )
+    out = build_bl_inputs_from_returns(df, mean_target_mode="benchmark", benchmark_mu0=0.001)
+    assert out["mu"].shape == (4,)
+    assert out["Sigma"].shape == (4, 4)
+    assert np.allclose(out["Sigma"], out["Sigma"].T, atol=1e-12)
