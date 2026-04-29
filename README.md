@@ -1,55 +1,87 @@
-# Shrinkage Inputs for Markowitz
-This project stabilizes portfolio inputs by shrinking sample expected returns and covariance.
-`src/shrinkage.py` implements cleaning, sample stats, constant-correlation target, Ledoit-Wolf-style covariance shrinkage, and Jorion mean shrinkage.
-It now also exposes `bl_shrinkage_inputs(...)` that returns exactly:
-- `mu_js_table` with columns `ETF`, `mu_js` (shape `N x 2`)
-- `Sigma_shrunk` (shape `N x N`)
-`src/bl_integration.py` exposes:
-- `build_bl_inputs_from_returns(...)` -> `{tickers, mu, Sigma}` for direct BL optimizer calls
-- `to_bl_inputs(...)` for validating/aliging externally supplied shrinkage outputs
+# Shrinkage-to-Black-Litterman Input Bridge
 
-## What We Are Doing
-Quant forecasts can be noisy.  
-We shrink both expected returns and covariance before BL uses them.
+This project extends a shrinkage input-estimation workflow into Black-Litterman-ready portfolio inputs. It converts cleaned return data into stabilized expected returns and covariance matrices, then exposes outputs that can be passed directly into downstream Black-Litterman optimization workflows.
 
-Data flow:
-`Quant returns -> Shrinkage -> BL inputs`
+The project is educational and does not represent financial advice, a live portfolio recommendation, or production investment software.
 
-BL inputs from this repo are:
+## What This Project Does
+
+- Cleans numeric return data from CSV input
+- Computes sample mean and covariance estimates
+- Builds a constant-correlation covariance target
+- Applies covariance shrinkage to improve stability
+- Applies Jorion-style mean shrinkage
+- Exports Black-Litterman-ready `mu` and `Sigma` inputs
+- Provides validation helpers for externally supplied shrinkage outputs
+- Includes tests for shrinkage behavior and input alignment
+
+## Why This Project Matters
+
+Black-Litterman workflows still depend on the quality of their inputs. Raw sample means and covariances can be unstable, especially with small samples or many assets. This project demonstrates a bridge between statistical shrinkage and downstream portfolio construction.
+
+The focus is input quality, not claiming that any final portfolio is optimal.
+
+## Data Flow
+
+```text
+Asset returns -> Shrinkage estimates -> BL-ready inputs
+```
+
+The exported Black-Litterman input dictionary includes:
+
 - `tickers`
 - `mu`
 - `Sigma`
-`scripts/run_shrinkage.py` loads a returns CSV, ignores non-numeric columns (for example Date), runs shrinkage, and prints diagnostics.
-`tests/test_shrinkage.py` checks bounded shrinkage weights, PSD/symmetric covariance, small-sample regularization, mean-shrink direction, and degenerate constant assets.
 
-## Pipeline (Step-by-Step)
-1. Read the returns matrix from CSV (`scripts/run_shrinkage.py`).
-2. Keep only numeric return columns and drop rows with NaN/inf (`clean_returns`).
-3. Compute sample mean and sample covariance (`sample_mean_cov`).
-4. Build a constant-correlation covariance target (`constant_corr_target`).
-5. Compute covariance shrinkage intensity and combine sample/target covariances (`lw_shrink_to_target`).
-6. Compute Jorion mean shrinkage toward the GLS grand mean (`jorion_mean_shrink`).
-7. Save outputs:
-   - `.npz`: `mu_shrunk`/`mu_js`, `asset_names`, `Sigma_shrunk`
-   - `_mu_js.csv`: `ETF,mu_js`
-   - `.json`: summary diagnostics for reporting
+## Core Modules
 
-## Run and Verify
-- Run shrinkage:
-  `python scripts/run_shrinkage.py --in returns.csv --out out_shrinkage.npz`
-- Run tests:
-  `pytest -q`
-- Expected: test suite passes and CLI prints `T`, `N`, shrinkage weights, and covariance norm diagnostics.
+- `src/shrinkage.py`: cleaning, sample stats, covariance shrinkage, and mean shrinkage
+- `src/bl_integration.py`: Black-Litterman input builders and validation helpers
+- `scripts/run_shrinkage.py`: shrinkage CLI runner
+- `scripts/run_bl_bridge.py`: BL-ready export CLI runner
+- `tests/test_shrinkage.py`: shrinkage and covariance tests
 
-Run demo: `python scripts/run_shrinkage.py --in returns.csv --out out_shrinkage.npz`
-CLI prints `T`, `N`, `w_mu`, `w_cov`, `rho_bar`, `mu_g`, first 5 `mu_sample` vs `mu_shrunk`, and Frobenius norms.
-Outputs: `out_shrinkage.npz` with `mu_shrunk` and `Sigma_shrunk`, plus `out_shrinkage.json` with summary diagnostics.
-Run tests from project root: `pytest -q`
-BL bridge example:
-`from src.bl_integration import build_bl_inputs_from_returns`
-`bl_inputs = build_bl_inputs_from_returns(df_returns)`
-`mu = bl_inputs["mu"]`
-`Sigma = bl_inputs["Sigma"]`
+## How to Run
 
-Export BL-ready files from CSV:
-`python scripts/run_bl_bridge.py --in returns.csv --out out_bl_inputs.npz`
+Run the shrinkage workflow:
+
+```bash
+python scripts/run_shrinkage.py --in returns.csv --out out_shrinkage.npz
+```
+
+Export Black-Litterman-ready files:
+
+```bash
+python scripts/run_bl_bridge.py --in returns.csv --out out_bl_inputs.npz
+```
+
+Run tests:
+
+```bash
+pytest -q
+```
+
+## Outputs
+
+The workflow writes:
+
+- `.npz` files containing shrunk return and covariance inputs
+- `_mu_js.csv` with ETF-level shrunk mean estimates
+- `.json` summary diagnostics
+- BL-ready input dictionaries containing `tickers`, `mu`, and `Sigma`
+
+## Skills Demonstrated
+
+- Portfolio input estimation
+- Covariance shrinkage
+- Expected return shrinkage
+- Black-Litterman input preparation
+- Numerical validation and testing
+- Python workflow modularization
+
+## Limitations
+
+- Shrinkage improves input stability but does not create reliable return forecasts.
+- The covariance target is intentionally transparent rather than highly customized.
+- This project prepares inputs for downstream optimizers; it is not a full investment management system.
+- Results are educational analytics, not investment advice.
