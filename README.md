@@ -43,6 +43,27 @@ The exported Black-Litterman input dictionary includes:
 
 ## How to Run
 
+Use Python 3.11 or newer. Create a virtual environment, then install the pinned
+numerical dependencies and test runner:
+
+```bash
+python -m venv .venv
+# Activate .venv using your platform's normal command.
+python -m pip install -r requirements-dev.txt
+```
+
+The included `data/sample_returns.csv` contains six synthetic monthly observations
+for an offline smoke demonstration. Means and covariance retain the input's
+per-observation units; they are not annualized or historical performance evidence.
+
+```bash
+python scripts/run_shrinkage.py --in data/sample_returns.csv --out outputs/sample.npz
+python scripts/run_bl_bridge.py --in data/sample_returns.csv --out outputs/bridge.npz
+python -m pytest -q
+```
+
+GitHub Actions runs the numerical suite and CLI artifact readback on Linux and Windows.
+
 Run the shrinkage workflow:
 
 ```bash
