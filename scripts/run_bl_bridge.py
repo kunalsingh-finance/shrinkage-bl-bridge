@@ -45,7 +45,7 @@ def main() -> int:
     out_npz.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         out_npz,
-        tickers=np.array(tickers, dtype=object),
+        tickers=np.array(tickers, dtype=str),
         mu=mu,
         Sigma=sigma,
     )
