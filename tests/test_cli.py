@@ -18,6 +18,7 @@ def test_documented_sample_cli(tmp_path):
     )
     with np.load(output, allow_pickle=False) as saved:
         covariance = saved["Sigma_shrunk"]
+        assert saved["asset_names"].tolist() == ["SPY", "AGG", "GLD"]
         assert saved["mu_shrunk"].shape == (3,)
         assert covariance.shape == (3, 3)
         assert np.isfinite(covariance).all()

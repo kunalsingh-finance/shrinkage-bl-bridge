@@ -65,7 +65,7 @@ def main() -> int:
         out_npz,
         mu_shrunk=mu_shrunk,
         mu_js=mu_shrunk,
-        asset_names=np.array(out["asset_names"], dtype=object),
+        asset_names=np.array(out["asset_names"], dtype=str),
         Sigma_shrunk=Sigma_shrunk,
     )
     mu_js_table.to_csv(out_mu_csv, index=False)
