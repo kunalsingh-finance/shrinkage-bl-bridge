@@ -70,7 +70,7 @@ The workflow writes:
 - `.json` summary diagnostics
 - BL-ready input dictionaries containing `tickers`, `mu`, and `Sigma`
 
-## Skills Demonstrated
+## Methods and Validation
 
 - Portfolio input estimation
 - Covariance shrinkage
